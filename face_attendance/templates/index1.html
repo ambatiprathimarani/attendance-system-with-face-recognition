@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Employee Attendance System</title>
+    <link rel="stylesheet" type="text/css" href="../css/main.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        #message-box {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 18px;        
+            border-radius: 8px;
+            max-width: 600px;
+            white-space: pre-line; /* Enables \n line breaks */
+        }
+
+        .centered {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #capture {
+            margin-top: 10px;
+            padding: 10px 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background section -->
+    <section class="material-half-bg">
+        <div class="cover"></div>
+    </section>
+
+    <!-- Main content -->
+    <section class="login-content" style="height:500px;">
+        <div style="color:#fff">
+            <h2>IITB Central Library</h2>
+        </div>
+        <main class="centered">
+            <div class="page-error tile centered">
+                <!-- Webcam video feed -->
+                <video id="video" width="150" height="250" autoplay></video>
+                
+                <!-- Capture button -->
+                <button id="capture">Mark Attendance</button>
+                <!-- Hidden canvas for capturing image -->
+                <canvas id="canvas" width="640" height="480" style="display: none;"></canvas>
+                <!-- Message output box -->
+                <div id="message-box"></div>
+            </div>
+        </main>
+    </section>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureButton = document.getElementById('capture');
+        const context = canvas.getContext('2d');
+        const messageBox = document.getElementById('message-box');
+
+        // Start webcam on page load
+        window.addEventListener('load', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                alert("Camera access is required to use this feature.");
+            }
+        });
+
+        // Speak voice message
+        function speakMessage(message) {
+            const utterance = new SpeechSynthesisUtterance(message);
+            speechSynthesis.speak(utterance);
+        }
+
+        // Capture image and send to Flask server
+        captureButton.addEventListener('click', async () => {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/png');
+
+            try {
+                const response = await fetch('/recognize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageData })
+                });
+
+                const data = await response.json();
+
+                if (data.recognized_employees && data.recognized_employees.length > 0) {
+                    const messages = data.recognized_employees.map(emp => {
+                        if (emp.type === "checkin") {
+                            speakMessage(`Welcome ${emp.fname}`);
+                            return `Welcome ${emp.fname} ${emp.lname}!\nCheck-in Time: ${emp.check_in}`;
+                        } else if (emp.type === "checkout") {
+                            speakMessage(`Thank you ${emp.fname}`);
+                            return `Thank you ${emp.fname} ${emp.lname}!\nCheck-in: ${emp.check_in}\nCheck-out: ${emp.check_out}\nTotal Hours: ${emp.worked}`;
+                        } else {
+                            return `Attendance recorded for ${emp.fname} ${emp.lname}.`;
+                        }
+                    });
+
+                    messageBox.innerText = messages.join('\n\n');
+                } else {
+                    speakMessage("Face not recognized");
+                    messageBox.innerText = "Face not recognized.";
+                }
+            } catch (err) {
+                console.error("Error sending image:", err);
+                speakMessage("An error occurred while processing the image");
+                messageBox.innerText = "An error occurred while processing the image.";
+            }
+        });
+    </script>
+</body>
+</html>
+
